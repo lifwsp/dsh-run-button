@@ -123,3 +123,71 @@ function assertWireError(result, label) {
   if (!String(result.error.message).includes('spawn exploded')) fail('the real failure message was lost')
   console.log('OK  failures carry error.details and the real message')
 }
+
+/* 4. "Run -> AI": the process is registered with ctx.jobs, owned by the agent -- */
+{
+  const started = []
+  const jobs = {
+    start(spec) {
+      started.push(spec)
+      return 'run-button-1'
+    },
+  }
+  const agent = { id: 'session-abc', session: { header: { cwd: '/tmp' } } }
+  const handleWithStreams = () => ({
+    ...makeHandle(),
+    observed: {
+      stdout: { readFrom: (from) => ({ text: from === 0 ? 'hello\n' : '', nextOffset: 6, lossy: false }) },
+      stderr: { readFrom: (from) => ({ text: '', nextOffset: from, lossy: false }) },
+    },
+  })
+  const services = (extra) => ({
+    shell: { resolve: spec, execute: async () => handleWithStreams() },
+    agents: { list: () => [agent] },
+    ...extra,
+  })
+  const mountWith = (svc) => {
+    let dispatch
+    const all = { ...svc, connection: { rpc: { handle: (_c, h) => ((dispatch = h), () => {}) } } }
+    const ctx = {
+      get: (n) => (Object.prototype.hasOwnProperty.call(all, n) ? all[n] : undefined),
+      effect: () => () => {},
+      interval: () => () => {},
+      on: () => () => {},
+      shell: all.shell,
+    }
+    const log = console.log
+    console.log = () => {}
+    apply(ctx)
+    console.log = log
+    return dispatch
+  }
+
+  // plain Run never touches the job registry
+  const plain = mountWith(services({ jobs }))
+  const r1 = await plain('start', { command: 'echo hello', sessionId: 'session-abc' })
+  if (!r1.ok) fail(`plain run failed: ${JSON.stringify(r1)}`)
+  if (started.length !== 0) fail('a plain Run must NOT register a job (it would wake the agent)')
+
+  // Run -> AI registers one job owned by the session, labelled as user-run
+  const ai = mountWith(services({ jobs }))
+  const r2 = await ai('start', { command: 'echo hello', sessionId: 'session-abc', notifyAgent: true })
+  if (!r2.ok) fail(`Run->AI failed: ${JSON.stringify(r2)}`)
+  if (started.length !== 1) fail(`expected exactly one job, got ${started.length}`)
+  const job = started[0]
+  if (job.owner !== 'session-abc') fail(`job owner should be the session, got ${job.owner}`)
+  if (!job.label.includes('echo hello') || !job.label.includes('user')) fail('label should say the user ran the command')
+  if (r2.value.agentNotify !== 'registered') fail(`view should report registered, got ${r2.value.agentNotify}`)
+  const hooks = job.run({ id: 'run-button-1' })
+  const outcome = await hooks.done
+  if (outcome.status !== 'completed' || outcome.detail !== 'exit code: 0') fail(`bad outcome ${JSON.stringify(outcome)}`)
+  const read = job.output[0].read(0)
+  if (read.text !== 'hello\n') fail('pull source should expose stdout')
+
+  // No jobs service: still runs, and says why it cannot notify
+  const noJobs = mountWith(services({}))
+  const r3 = await noJobs('start', { command: 'echo hello', sessionId: 'session-abc', notifyAgent: true })
+  if (!r3.ok) fail('without a jobs service the run must still succeed')
+  if (r3.value.agentNotify === 'registered') fail('should not claim registration without a jobs service')
+  console.log('OK  Run->AI registers an owned job; plain Run does not; no jobs service degrades gracefully')
+}
