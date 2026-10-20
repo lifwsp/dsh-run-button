@@ -86,10 +86,10 @@ Pin a version or work offline from the repo with either of these instead:
 
 ```bash
 # the prebuilt tarball attached to the latest release
-dsh plugin --profile web add "https://github.com/EdwardXiao-bit/dsh-run-button/releases/latest/download/dsh-run-button.tgz"
+dsh plugin --profile web add "https://github.com/lifwsp/dsh-run-button/releases/latest/download/dsh-run-button.tgz"
 
 # straight from the repository source
-dsh plugin --profile web add github:EdwardXiao-bit/dsh-run-button
+dsh plugin --profile web add github:lifwsp/dsh-run-button
 ```
 
 > **Plain `npm install dsh-run-button` is not an install for DSH.** It fetches the package into `node_modules`, but DSH only loads a plugin that appears in the profile's `bundles` list (or that ships its own bundle patch), so nothing ever mounts. Add it to the profile by hand instead:

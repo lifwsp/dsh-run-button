@@ -6,7 +6,7 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/EdwardXiao-bit/dsh-run-button.git"
+    "url": "git+https://github.com/lifwsp/dsh-run-button.git"
   },
   "main": "./lib/index.js",
   "exports": {

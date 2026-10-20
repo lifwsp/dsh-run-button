@@ -85,10 +85,10 @@ dsh plugin --profile web remove dsh-run-button
 
 ```bash
 # 最新 Release 上的预构建 tarball
-dsh plugin --profile web add "https://github.com/EdwardXiao-bit/dsh-run-button/releases/latest/download/dsh-run-button.tgz"
+dsh plugin --profile web add "https://github.com/lifwsp/dsh-run-button/releases/latest/download/dsh-run-button.tgz"
 
 # 直接从仓库源码装
-dsh plugin --profile web add github:EdwardXiao-bit/dsh-run-button
+dsh plugin --profile web add github:lifwsp/dsh-run-button
 ```
 
 > **裸跑 `npm install dsh-run-button` 对 DSH 来说不算安装。** 它只是把包取到 `node_modules`，而 DSH 只加载出现在 profile `bundles` 列表里的插件（或自带 bundle patch 的包），所以什么都不会被挂载。要手动装就写进 profile：
