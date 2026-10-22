@@ -30,7 +30,12 @@ dsh-run-button/
 ├── cordis.patch.yml      profile row: - insert: [{id: run-button, name: dsh-run-button}]
 ├── lib/index.js          HOST  — ESM Cordis plugin
 ├── lib/client.js         CLIENT — classic-script bundle (window.__ModuleLoader__)
+├── screenshots.json      market screenshots (the registry reads it beside package.json)
+├── assets/               README / market images
 ├── docs/DEVELOPMENT.md   this page
+├── docs/registry/        awesome-dsh-plugin registry entry + how to submit it
+├── .githooks/pre-commit  runs the client gates when lib/ changes (git config core.hooksPath .githooks)
+├── scripts/publish.mjs           npm pack + fill docs/registry/<owner>__<repo>.yml
 ├── scripts/check-client.mjs       parse gate + undeclared-global audit
 ├── scripts/simulate-client.mjs    mounts against a real DOM and drives the whole path
 ├── scripts/test-host-mount.mjs    host half: mount / teardown

@@ -3,8 +3,8 @@
  * Prepare this plugin for the DSH community market.
  *
  * 1. Verifies the package can be packed and the browser bundle still parses.
- * 2. Fills submission/entry.template.yml with the real GitHub coordinates and
- *    writes it to submission/<owner>__<repo>.yml — the exact file the
+ * 2. Fills docs/registry/entry.template.yml with the real GitHub coordinates and
+ *    writes it to docs/registry/<owner>__<repo>.yml — the exact file the
  *    awesome-dsh-plugin registry wants in data/plugins/.
  *
  * Usage:
@@ -38,14 +38,14 @@ console.log('=== 2/3 building the tarball ===')
 execFileSync('npm', ['pack'], { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' })
 
 console.log('=== 3/3 writing the registry entry ===')
-const template = readFileSync(join(root, 'submission', 'entry.template.yml'), 'utf8')
+const template = readFileSync(join(root, 'docs', 'registry', 'entry.template.yml'), 'utf8')
 const entry = template
   .replace(/^#.*\n/gm, '')
   .replaceAll('<owner>/<repo>', slug)
   .replaceAll('<owner>', owner)
   .replaceAll('<repo>', repo)
 
-const target = join(root, 'submission', `${owner}__${repo}.yml`)
+const target = join(root, 'docs', 'registry', `${owner}__${repo}.yml`)
 mkdirSync(dirname(target), { recursive: true })
 writeFileSync(target, entry)
 console.log(entry.trim())
@@ -54,4 +54,4 @@ console.log(`\nnext steps:`)
 console.log(`  1. git remote add origin ${remote}.git && git push -u origin main`)
 console.log(`  2. add the "dsh-plugin" topic to the repository`)
 console.log(`  3. attach the version-free dsh-run-button.tgz to a GitHub Release (tag v<version>)`)
-console.log(`  4. open a PR adding submission/${owner}__${repo}.yml as data/plugins/${owner}__${repo}.yml`)
+console.log(`  4. open a PR adding docs/registry/${owner}__${repo}.yml as data/plugins/${owner}__${repo}.yml`)

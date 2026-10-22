@@ -14,18 +14,15 @@
 
 ## インストール
 
-**プラグインマーケットから:** 設定 → プラグインマーケット → `dsh-run-button` を検索 → インストール。
-
-**`dsh` CLI から:**
+`dsh` CLI で、GitHub からこのフォークを直接入れます。
 
 ```bash
-dsh plugin --profile web add dsh-run-button
-# 最新リリースやリポジトリのソースから入れる場合
-dsh plugin --profile web add "https://github.com/lifwsp/dsh-run-button/releases/latest/download/dsh-run-button.tgz"
 dsh plugin --profile web add github:lifwsp/dsh-run-button
 ```
 
-外すときは `dsh plugin --profile web remove dsh-run-button` を実行します。`npm install` だけでは、DSH にプラグインとして読み込まれません。
+外すときは `dsh plugin --profile web remove dsh-run-button` を実行します。入れたり更新したりしたあとは、DSH を再起動してください。
+
+> プラグインマーケットと npm にある `dsh-run-button` は、EdwardXiao-bit さんの元の版（0.1.0）です。このフォークで足した機能（入力欄、Run→AI、Panel を開く場所の選択、DSH 0.2 への対応）は入っていません。
 
 ## 使い方
 

@@ -43,7 +43,7 @@ tarball: https://github.com/<owner>/<repo>/releases/latest/download/dsh-run-butt
 ## Git-based sync (do this first)
 
 ```bash
-cd <this directory>
+cd <this repository>
 git remote add origin https://github.com/<owner>/<repo>.git
 git push -u origin main
 ```
@@ -67,7 +67,7 @@ Keep the asset name **version-free** (`dsh-run-button.tgz`) so the
 ```bash
 git clone https://github.com/<owner>/awesome-dsh-plugin.git
 cd awesome-dsh-plugin
-cp <this directory>/submission/<owner>__<repo>.yml data/plugins/
+cp <this repository>/docs/registry/<owner>__<repo>.yml data/plugins/
 git checkout -b add-dsh-run-button
 git add data/plugins/<owner>__<repo>.yml
 git commit -m "Add dsh-run-button"

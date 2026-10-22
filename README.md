@@ -14,18 +14,15 @@
 
 ## Install
 
-**From the plugin market:** Settings → Plugin Market → search `dsh-run-button` → Install.
-
-**From the `dsh` CLI:**
+Install this fork straight from GitHub with the `dsh` CLI:
 
 ```bash
-dsh plugin --profile web add dsh-run-button
-# or pin to the latest release / the repository source
-dsh plugin --profile web add "https://github.com/lifwsp/dsh-run-button/releases/latest/download/dsh-run-button.tgz"
 dsh plugin --profile web add github:lifwsp/dsh-run-button
 ```
 
-Remove it with `dsh plugin --profile web remove dsh-run-button`. Plain `npm install` does not mount the plugin in DSH.
+Remove it with `dsh plugin --profile web remove dsh-run-button`. Restart DSH after installing or updating.
+
+> The `dsh-run-button` in the plugin market and on npm is the original 0.1.0 by EdwardXiao-bit. It does not include this fork's changes (input field, Run→AI, Panel placement, DSH 0.2 support).
 
 ## Using it
 

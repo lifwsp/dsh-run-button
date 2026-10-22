@@ -14,18 +14,15 @@
 
 ## 安装
 
-**插件市场：** 设置 → 插件市场 → 搜索 `dsh-run-button` → 安装。
-
-**`dsh` 命令行：**
+用 `dsh` 命令行直接从 GitHub 安装这个 fork：
 
 ```bash
-dsh plugin --profile web add dsh-run-button
-# 或者从最新 release / 仓库源码安装
-dsh plugin --profile web add "https://github.com/lifwsp/dsh-run-button/releases/latest/download/dsh-run-button.tgz"
 dsh plugin --profile web add github:lifwsp/dsh-run-button
 ```
 
-卸载：`dsh plugin --profile web remove dsh-run-button`。只执行 `npm install` 不会让 DSH 加载这个插件。
+卸载：`dsh plugin --profile web remove dsh-run-button`。安装或更新后请重启 DSH。
+
+> 插件市场和 npm 上的 `dsh-run-button` 是 EdwardXiao-bit 的原版 0.1.0，不包含这个 fork 的改动（输入框、Run→AI、Panel 打开位置、DSH 0.2 支持）。
 
 ## 使用
 

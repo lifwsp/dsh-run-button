@@ -1,0 +1,6 @@
+url: https://github.com/lifwsp/dsh-run-button
+name: lifwsp/dsh-run-button
+category: ui
+description:
+  en: 'Adds a Run button to shell code blocks in replies. Commands run in the session sandbox on a terminal, so prompts such as sudo passwords or ssh yes/no can be answered; output shows in a bottom-right dock or a per-run panel tab.'
+  zh: 为回答里的命令行代码块加 Run 按钮。命令在会话沙箱里以终端方式运行，可以回答 sudo 密码、ssh yes/no 等提示；输出显示在右下角浮窗或每次运行一个的面板标签页。
