@@ -146,6 +146,8 @@ let runCounter = 0
 let lastRunId = null
 /** When set, the next run/start is answered with a refusal instead. */
 let failNextStart = false
+/** runId -> scripted PTY transcript for interactive runs (see the input test). */
+const interactiveRuns = new Map()
 
 const slots = {
   inject(_name, callback) {
@@ -175,12 +177,37 @@ const connection = {
         runCounter += 1
         lastRunId = `run-${runCounter}`
         runCommands.set(lastRunId, args.command)
+        if (args.command.startsWith('sudo ')) {
+          interactiveRuns.set(lastRunId, { stdout: 'Password:', done: false, inputs: [] })
+        }
         return Promise.resolve({
           ok: true,
           value: {
             runId: lastRunId, command: args.command, status: 'running', exitCode: null,
             stdout: 'hello\n', stderr: '', cwd: 'C:\\Users\\Ed', sandboxMode: 'workspace-write',
             startedAt: Date.now(), finishedAt: null,
+          },
+        })
+      }
+      if (endpoint === 'input') {
+        const pty = interactiveRuns.get(args.runId)
+        if (pty === undefined) return Promise.resolve({ ok: false, error: { code: 'run-failed', message: 'not interactive', details: {} } })
+        pty.inputs.push(args.signal ?? args.data)
+        // sudo turns echo off: the terminal sends back only the newline.
+        if (args.data === 'hunter2\r') {
+          pty.stdout += '\nok\n'
+          pty.done = true
+        }
+        return Promise.resolve({ ok: true, value: { accepted: true } })
+      }
+      if (endpoint === 'output' && interactiveRuns.has(args.runId)) {
+        const pty = interactiveRuns.get(args.runId)
+        return Promise.resolve({
+          ok: true,
+          value: {
+            runId: args.runId, command: runCommands.get(args.runId) ?? '', status: pty.done ? 'completed' : 'running',
+            exitCode: pty.done ? 0 : null, stdout: pty.stdout, stderr: '', cwd: '/tmp', sandboxMode: 'danger-full-access',
+            interactive: true, startedAt: Date.now(), finishedAt: null,
           },
         })
       }
@@ -305,7 +332,7 @@ function renderStrip() {
     } catch (error) {
       continue
     }
-    const toggle = findElement(tree, (node) => node.props && typeof node.props.title === 'string' && node.props.title.indexOf('dsh-better-sidebar') >= 0)
+    const toggle = findElement(tree, (node) => node.props && typeof node.props['data-desc'] === 'string' && node.props['data-desc'].indexOf('dsh-better-sidebar') >= 0)
     if (toggle !== null) return { tree, toggle }
   }
   return { tree: null, toggle: null }
@@ -419,8 +446,9 @@ if (strip === undefined) fail('the composer run strip was never registered')
 const stripView = renderStrip()
 if (stripView.toggle === null) fail('the Panel mode toggle was not rendered')
 {
-  // Runs already exist here (the dock section above started one), so the strip is solid.
-  if (stripView.tree.props['data-idle'] !== '0') fail('a strip with runs must not be idle/faint')
+  // The dock section's run has finished: a strip holding only finished chips
+  // fades back (it used to stay solid until every chip was dismissed by hand).
+  if (stripView.tree.props['data-idle'] !== '1') fail('a strip whose runs have all finished should fade (idle)')
 }
 stripView.toggle.props.onClick()
 await new Promise((resolve) => setTimeout(resolve, 200))
@@ -523,7 +551,7 @@ if (wrongTarget.length > 0) {
   fail(`default placement should be "right", saw ${JSON.stringify(wrongTarget.map((seed) => seed.target))}`)
 }
 
-const placementTitle = (needle) => (node) => typeof node.props?.title === 'string' && node.props.title.indexOf(needle) >= 0
+const placementTitle = (needle) => (node) => typeof node.props?.['data-desc'] === 'string' && node.props['data-desc'].indexOf(needle) >= 0
 const bottomSwitch = findElement(renderStrip().tree, placementTitle('bottom workbench'))
 if (bottomSwitch === null) fail('the Bottom placement switch was not rendered in panel mode')
 const tabsBeforeMove = openTabCalls.length
@@ -553,7 +581,7 @@ if (openTabCalls.slice(tabsBeforeBack).some((seed) => seed.target !== 'right')) 
  * ------------------------------------------------------------------ */
 
 // Switch back to dock mode so a run has a visible card to clean up.
-const dockToggle = findElement(renderStrip().tree, (node) => typeof node.props?.title === 'string' && node.props.title.indexOf('bottom-right corner') >= 0)
+const dockToggle = findElement(renderStrip().tree, (node) => typeof node.props?.['data-desc'] === 'string' && node.props['data-desc'].indexOf('bottom-right corner') >= 0)
 if (dockToggle === null) fail('the Dock mode toggle was not rendered')
 dockToggle.props.onClick()
 await new Promise((resolve) => setTimeout(resolve, 200))
@@ -713,9 +741,130 @@ for (let guard = 0; guard < 20; guard += 1) {
 {
   const idleTree = renderStrip().tree
   if (idleTree.props['data-idle'] !== '1') fail('a strip with no runs and no failure should be marked idle (faint)')
-  if (findElement(idleTree, (node) => typeof node.props?.title === 'string' && node.props.title.indexOf('bottom-right corner') >= 0) === null) {
+  if (findElement(idleTree, (node) => typeof node.props?.['data-desc'] === 'string' && node.props['data-desc'].indexOf('bottom-right corner') >= 0) === null) {
     fail('the idle strip must keep the mode switches, or the mode could never be changed before a first run')
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * Interactive run in the dock: a masked password prompt answered inline
+ * ------------------------------------------------------------------ */
+{
+  // Back to the dock surface.
+  const dockToggle = findElement(renderStrip().tree, (node) => typeof node.props?.['data-desc'] === 'string' && node.props['data-desc'].indexOf('bottom-right corner') >= 0)
+  dockToggle.props.onClick()
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  document.body.insertAdjacentHTML('beforeend', [
+    '<div class="_block_rsn9u_4 md-code-block">',
+    '<div class="_bannerWrap_rsn9u_24"><div class="_banner_rsn9u_24" data-code-block-banner>',
+    '<div class="_infostring_rsn9u_45">bash</div>',
+    '<div class="_action_rsn9u_56"><button class="_copyButton_rsn9u_62">Copy</button></div>',
+    '</div></div>',
+    '<div class="_content_rsn9u_74" data-code-block-content><pre>sudo true &amp;&amp; echo ok</pre></div>',
+    '</div>',
+  ].join(''))
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  const all = document.querySelectorAll('[data-dsh-run-button]')
+  all[all.length - 1].dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+  await new Promise((resolve) => setTimeout(resolve, 500))
+  const card = cardByCommand('sudo true && echo ok')
+  if (card === null) fail('no dock card for the interactive run')
+  const field = card.querySelector('.dsh-runbtn-input input')
+  if (field === null) fail('an interactive running command must show an input field')
+  if (field.type !== 'password') fail(`a "Password:" prompt should mask the field, got type=${field.type}`)
+  if (renderStrip().tree.props['data-idle'] !== '0') fail('a strip with a live run must stay solid')
+  // The field must survive the poll re-render (same node, value kept).
+  field.value = 'hunter'
+  await new Promise((resolve) => setTimeout(resolve, 450))
+  const again = cardByCommand('sudo true && echo ok').querySelector('.dsh-runbtn-input input')
+  if (again !== field || again.value !== 'hunter') fail('the poll re-render replaced the input field or lost the typed text')
+  // ^C button goes to the input endpoint as a signal.
+  const ctrlC = [...card.querySelectorAll('button')].find((b) => b.textContent.trim() === '^C')
+  ctrlC.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  const runId = [...interactiveRuns.keys()].at(-1)
+  if (interactiveRuns.get(runId).inputs.at(-1) !== 'SIGINT') fail('^C should send signal SIGINT')
+  field.value = 'hunter2'
+  field.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  if (interactiveRuns.get(runId).inputs.at(-1) !== 'hunter2\r') fail('Enter should send the text followed by CR')
+  if (field.value !== '') fail('the field should be cleared after sending')
+  await new Promise((resolve) => setTimeout(resolve, 500))
+  const done = cardByCommand('sudo true && echo ok')
+  if (done.querySelector('.dsh-runbtn-input') !== null) fail('a finished run must not keep an input row')
+  if (done.textContent.includes('hunter2')) fail('the password leaked into the card')
+  const saved = window.sessionStorage.getItem('dsh-run-button:runs') ?? ''
+  if (saved.includes('hunter2')) fail('the password leaked into sessionStorage')
+  if (!done.querySelector('.dsh-runbtn-out').textContent.includes('ok')) fail('transcript should show the result')
+  if (renderStrip().tree.props['data-idle'] !== '1') fail('the strip should fade again once the last live run finishes')
+}
+
+/* ------------------------------------------------------------------ *
+ * One-line strip: newest finished run as a chip, older ones behind "+N"
+ * ------------------------------------------------------------------ */
+{
+  const byClass = (needle) => (node) => typeof node.props?.className === 'string' && node.props.className.split(' ').includes(needle)
+  const countAll = (tree, test) => {
+    let n = 0
+    const walk = (node) => {
+      if (node === null || typeof node !== 'object') return
+      if (test(node)) n += 1
+      for (const child of node.children ?? []) walk(child)
+    }
+    walk(tree)
+    return n
+  }
+  for (const command of ['echo two', 'echo three']) {
+    document.body.insertAdjacentHTML('beforeend', [
+      '<div class="_block_rsn9u_4 md-code-block">',
+      '<div class="_bannerWrap_rsn9u_24"><div class="_banner_rsn9u_24" data-code-block-banner>',
+      '<div class="_infostring_rsn9u_45">bash</div>',
+      '<div class="_action_rsn9u_56"><button class="_copyButton_rsn9u_62">Copy</button></div>',
+      '</div></div>',
+      `<div class="_content_rsn9u_74" data-code-block-content><pre>${command}</pre></div>`,
+      '</div>',
+    ].join(''))
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    const buttons = document.querySelectorAll('[data-dsh-run-button]')
+    buttons[buttons.length - 1].dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+    await new Promise((resolve) => setTimeout(resolve, 600))
+  }
+  let tree = renderStrip().tree
+  if (countAll(tree, byClass('dsh-runbtn-chip')) !== 1) fail('the strip should show exactly one finished chip (the newest)')
+  const newest = findElement(tree, byClass('dsh-runbtn-dockBtn'))
+  if (!String(newest?.props.title).includes('echo three')) fail('the visible chip should be the newest run')
+  const more = findElement(tree, byClass('dsh-runbtn-moreBtn'))
+  if (more === null) fail('older finished runs should collapse into a "+N" button')
+  if (!JSON.stringify(more.children).includes('+2')) fail(`"+N" should count the 2 older runs, got ${JSON.stringify(more.children)}`)
+  if (findElement(tree, byClass('dsh-runbtn-menu')) !== null) fail('the history menu should start closed')
+  // Mode switches are icons with an accessible name.
+  const modeButtons = []
+  const collect = (node) => {
+    if (node === null || typeof node !== 'object') return
+    if (byClass('dsh-runbtn-mode')(node)) modeButtons.push(node)
+    for (const child of node.children ?? []) collect(child)
+  }
+  collect(tree)
+  if (modeButtons.length < 3) fail('mode switches missing')
+  for (const button of modeButtons) {
+    if (findElement(button, (node) => node.type === 'svg') === null) fail('each mode switch should be an icon')
+    if (typeof button.props['aria-label'] !== 'string' || button.props['data-tip'] !== button.props['aria-label'] || typeof button.props['data-desc'] !== 'string') fail('icon switches need aria-label and a hover label (data-tip/data-desc)')
+    if (button.props.title !== undefined) fail('icon switches should not also carry a native title (double tooltip)')
+  }
+  more.props.onClick()
+  tree = renderStrip().tree
+  const menu = findElement(tree, byClass('dsh-runbtn-menu'))
+  if (menu === null) fail('"+N" should open the history menu')
+  if (countAll(menu, byClass('dsh-runbtn-dockBtn')) !== 2) fail('the history menu should list the 2 older runs')
+  // Escape closes it.
+  window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  if (findElement(renderStrip().tree, byClass('dsh-runbtn-menu')) !== null) fail('Escape should close the history menu')
+  findElement(renderStrip().tree, byClass('dsh-runbtn-moreBtn')).props.onClick()
+  findElement(renderStrip().tree, byClass('dsh-runbtn-menuClear')).props.onClick()
+  await new Promise((resolve) => setTimeout(resolve, 60))
+  tree = renderStrip().tree
+  if (countAll(tree, byClass('dsh-runbtn-chip')) !== 0) fail('"Clear finished" should remove every finished run')
+  if (findElement(tree, byClass('dsh-runbtn-moreBtn')) !== null) fail('"+N" should disappear once nothing is hidden')
 }
 
 const errors = warnings.filter((line) => line.startsWith('ERROR'))

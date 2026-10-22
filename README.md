@@ -21,12 +21,12 @@ This plugin adds the missing verb. Code blocks whose language is a command line 
 - the command runs **on the host**, in the session's own workspace directory and sandbox;
 - output streams into a **floating dock at the bottom-right corner** — one card per run, newest first, never covering the conversation;
 - the chip reflects state — `▶ Run` → `■ Stop` → `✓ Run` (exit 0) or `✕ Run` (non-zero / killed);
-- a run strip above the composer lists active and recent runs: click a chip to re-open that run's card, or its `×` to drop the run;
+- a one-line run strip above the composer shows every live run plus the newest finished one; older runs collapse into a **+N** menu (with **Clear finished**). Click a chip to re-open that run's card, or its `×` to drop the run. With nothing running the strip fades until hovered;
 - long-running commands can be stopped from the chip, the dock card, or the workbench tab.
 
 ### Output surfaces
 
-Three modes, switchable from the strip (`Dock` / `Panel` / `Off`); the choice is remembered:
+Three modes, switchable from the icon buttons at the right of the strip (`Dock` / `Panel` / `Off`; hover for the name); the choice is remembered:
 
 | Mode | Where output goes | Needs anything extra? |
 | --- | --- | --- |
@@ -61,6 +61,8 @@ This is a **user-initiated** execution surface, and it is deliberately not more 
 - The RPC channel is loopback-only and sits behind the Connection's own trust fence plus browser authentication. A credential-less request gets `401`.
 - Commands are executed asynchronously, so the UI never blocks; running processes are killed when the plugin stops or is updated, so no orphan survives a reload.
 - Output is capped at 256 KB per stream; a blocked or unauthorized command surfaces the executor's own denial in the panel.
+- Interactive runs get a real terminal (PTY) but stay **inside the same sandbox** (`ctx.sandbox.confine`, exactly like the Agent's own terminal). Under `read-only` / `workspace-write`, macOS Seatbelt refuses `/dev/tty` and setuid binaries, so `sudo` and `ssh` host-key / password prompts only work in a `danger-full-access` session; prompts that read stdin (`read -p`, installers) work in every mode.
+- **Typed input is never logged or stored.** It is not echoed locally, not written to the plugin log, sessionStorage, or the Run→AI job; the only copy in the output is whatever the terminal itself echoes, and password prompts switch that echo off.
 
 ## Install
 
@@ -115,7 +117,8 @@ Then restart DSH (or reload the page for the client half).
 1. Ask the Agent for a command, or write one in a fenced `bash`/`powershell` block.
 2. Click **▶ Run** in the block's banner.
 3. Output appears in the **bottom-right dock** (the default mode). Each run is a card: **stop** while it is live, **collapse** to hide its output, **close** to drop it.
-4. Switch where output goes with **Dock / Panel / Off** at the right of the run strip; `Panel` instead gives each run its own bottom-workbench tab, with **Stop**, **Copy**, and **Close**.
+   While a run is live, an **input row** sits under its output. Type an answer and press **Enter** to send it (with a newline). The field switches to **masked** automatically when the last output line looks like a password prompt (`Password:`, `パスワード:`, `passphrase`, …); **mask** toggles it by hand. **^C** (or Ctrl-C in the field) sends SIGINT to the foreground program without killing the run; **^D** (or Ctrl-D in an empty field) sends EOF. Example: `read -p "name? " n; echo "hi $n"`.
+4. Switch where output goes with the **Dock / Panel / Off** icons at the right of the run strip; `Panel` instead gives each run its own bottom-workbench tab, with **Stop**, **Copy**, and **Close**.
 5. Click the **cwd chip** (next to Run) to override the working directory for that block; the chosen directory is remembered for the session.
 
 ## How it works
@@ -132,7 +135,7 @@ dsh-run-button/
 └── scripts/simulate-client.mjs    mounts against a real DOM and drives the whole path
 ```
 
-**Host half** (`lib/index.js`) mounts a dedicated loopback RPC channel, `/dsh-run-button`, with endpoints `info`, `start`, `output`, `input`, `kill`. `start` resolves the session's cwd and sandbox policy, then uses the shipped `shell` service (`ctx.shell.resolve` → `ctx.shell.start`) to launch the command and hold a background process handle. `output` reads **incremental** deltas (`readOutput()` never repeats text) and returns a JSON-safe view: status, exit code, signal, cwd, sandbox mode, and the accumulated streams. Every side effect is a `ctx.effect`, including killing live processes on teardown.
+**Host half** (`lib/index.js`) mounts a dedicated loopback RPC channel, `/dsh-run-button`, with endpoints `info`, `start`, `output`, `input`, `kill`. `start` resolves the session's cwd and sandbox policy, then launches the command. When the host offers a terminal primitive (`ctx.subprocess.spawnTerminal`, DSH 0.2) it runs `bash -c <command>` on a **PTY**, confined by `ctx.sandbox.confine` unless the session is `danger-full-access`, and wraps the terminal in the same handle shape the shell seam returns (ANSI sequences stripped, CRLF folded, 1 MB retained, 30-minute ceiling). Otherwise — or if confinement/spawn fails, or the request passes `interactive: false` — it falls back to the plain `shell` service (`ctx.shell.resolve` → `ctx.shell.execute`, or `ctx.shell.start` on older hosts), where stdin is closed. `input` writes to the PTY (`{ runId, data }`) or interrupts its foreground job (`{ runId, signal: "SIGINT" }`); `info` and every view report `interactive` so the UI only shows the input row when it can work. `output` reads **incremental** deltas (`readOutput()` never repeats text) and returns a JSON-safe view: status, exit code, signal, cwd, sandbox mode, and the accumulated streams. Every side effect is a `ctx.effect`, including killing live processes on teardown.
 
 **Client half** (`lib/client.js`) does three things:
 
@@ -243,7 +246,9 @@ None required. Behaviour that can be tuned:
 - Output is polled, not pushed; at the default interval a fast command may appear in one or two chunks.
 - Every run's card lives in one fixed bottom-right dock; there is no per-block anchoring, so output never appears inside the transcript.
 - A run's output lives on the host for 10 minutes and survives a page refresh (run ids are kept in `sessionStorage`), but the host forgets it after that TTL or a DSH restart.
-- `input` (stdin) is implemented on the host but not yet surfaced in the UI.
+- Interactive input needs the host's terminal primitive (DSH 0.2 on macOS/Linux). On older hosts or Windows, runs use pipes and the input row is not shown.
+- The PTY is a plain-text view, not a terminal emulator: colors and cursor movement are stripped, so full-screen programs (`vim`, `top`, `less`) are not usable. stdout and stderr arrive merged.
+- `sudo` / `ssh` prompts need a `danger-full-access` session (see Security posture).
 
 ## License
 

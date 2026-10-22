@@ -21,12 +21,12 @@ DSH 把回答渲染成 Markdown，而代码框只提供一个操作：**复制**
 - 命令在**宿主机**上执行，用它所在会话自己的工作目录与沙箱；
 - 输出流进**右下角的浮动面板（dock）** —— 每个运行一张卡片，最新的在最上面，始终不覆盖对话区；
 - 按钮反映状态：`▶ 运行` → `■ 停止` → `✓ 运行`（退出码 0）/ `✕ 运行`（非 0 或被终止）；
-- 输入框上方的运行条列出进行中与最近的运行：点 chip 重新展开该运行的卡片，点它的 `×` 丢弃该运行；
+- 输入框上方的单行运行条显示所有进行中的运行和最近结束的一条；更早的运行收进 **+N** 菜单（含 **Clear finished**）。点 chip 重新展开该运行的卡片，点它的 `×` 丢弃该运行。没有运行中的命令时运行条变淡，悬停即恢复；
 - 长时间运行的命令可以从按钮、浮动卡片或底部标签页里停止。
 
 ### 三种输出位置
 
-三种模式，可在运行条上切换（`Dock` / `Panel` / `Off`），选择会被记住：
+三种模式，可用运行条右侧的图标按钮切换（`Dock` / `Panel` / `Off`，悬停可看名称），选择会被记住：
 
 | 模式 | 输出去哪 | 需要额外装东西吗 |
 | --- | --- | --- |
@@ -60,6 +60,8 @@ DSH 把回答渲染成 Markdown，而代码框只提供一个操作：**复制**
 - RPC 通道仅限本机回环，并且位于 Connection 自带的信任栅栏与浏览器鉴权之后；没有凭据的请求直接 `401`。
 - 执行是异步的，界面不会阻塞；插件停止或更新时会杀掉仍在运行的进程，重载后不留孤儿进程。
 - 每条流上限 256 KB；被沙箱拦截的命令会把执行器自己的拒绝信息显示在面板里。
+- 交互式运行会拿到真正的终端（PTY），但仍在**同一个沙箱**里（`ctx.sandbox.confine`，与 Agent 自己的终端相同）。在 `read-only` / `workspace-write` 下，macOS Seatbelt 会拒绝打开 `/dev/tty` 和启动 setuid 程序，所以 `sudo` 与 `ssh` 的主机指纹确认、密码提示只在 `danger-full-access` 会话里可用；从 stdin 读的提示（`read -p`、安装程序）在所有模式下都可用。
+- **输入的内容不会被记录或保存。** 不做本地回显，不写插件日志、sessionStorage，也不进 Run→AI 的 job；输出里唯一可能出现的是终端自己的回显，而密码提示会关掉回显。
 
 ## 安装
 
@@ -114,7 +116,8 @@ dsh dev inject <path-to>/dsh-run-button
 1. 让 Agent 给一条命令，或自己写一个 `bash`/`powershell` 代码框。
 2. 点代码框标题栏里的 **▶ 运行**。
 3. 输出出现在**右下角的浮动面板**里（默认 Dock 模式）。每个运行一张卡片：运行中可 **stop**、**collapse** 折叠输出、**close** 丢弃该条。
-4. 想改输出位置就点运行条右侧的 **Dock / Panel / Off**；切到 `Panel` 时改为每个运行一个底部工作台标签页（那个标签页有 **Stop**、**Copy**、**Close** 和一个 **Clear finished** 式的列表）。
+   运行中的卡片在输出下方有一行**输入框**：输入后按 **Enter** 发送（附带换行）。当最后一行输出像密码提示（`Password:`、`密码：`、`passphrase` 等）时输入框会自动**掩码**，**mask** 可手动切换。**^C**（或在输入框里按 Ctrl-C）向前台程序发送 SIGINT，不会结束整个运行；**^D**（或在空输入框里按 Ctrl-D）发送 EOF。例：`read -p "name? " n; echo "hi $n"`。
+4. 想改输出位置就点运行条右侧的 **Dock / Panel / Off** 图标；切到 `Panel` 时改为每个运行一个底部工作台标签页（那个标签页有 **Stop**、**Copy**、**Close** 和一个 **Clear finished** 式的列表）。
 5. 点 **cwd 小标签**（运行按钮旁）可为该代码框指定工作目录；选择会在本会话内记住。
 
 ## 实现
@@ -131,7 +134,7 @@ dsh-run-button/
 └── scripts/simulate-client.mjs   在真实 DOM 上挂载并走完整链路
 ```
 
-**Host 半边**（`lib/index.js`）挂一条专用回环 RPC 通道 `/dsh-run-button`，端点 `info`、`start`、`output`、`input`、`kill`。`start` 解析会话的 cwd 与沙箱策略，然后用内置 `shell` 服务（`ctx.shell.resolve` → `ctx.shell.start`）启动命令并持有后台进程句柄。`output` 读取**增量** delta（`readOutput()` 不会重复吐已读内容），返回 JSON 安全的视图：状态、退出码、信号、cwd、沙箱模式与累积输出。所有副作用都是 `ctx.effect`，其中包含卸载时杀掉活动进程。
+**Host 半边**（`lib/index.js`）挂一条专用回环 RPC 通道 `/dsh-run-button`，端点 `info`、`start`、`output`、`input`、`kill`。`start` 解析会话的 cwd 与沙箱策略，然后启动命令。宿主提供终端原语（`ctx.subprocess.spawnTerminal`，DSH 0.2）时，用 **PTY** 运行 `bash -c <命令>`；除 `danger-full-access` 外先经 `ctx.sandbox.confine` 包裹，并把终端包装成与 shell seam 返回值同形的句柄（去掉 ANSI 序列、CRLF 折叠为 LF、保留 1 MB、上限 30 分钟）。否则——或 confine / 启动失败、或请求带 `interactive: false`——回退到普通 `shell` 服务（`ctx.shell.resolve` → `ctx.shell.execute`，旧宿主为 `ctx.shell.start`），此时 stdin 是关闭的。`input` 向 PTY 写入（`{ runId, data }`）或中断前台作业（`{ runId, signal: "SIGINT" }`）；`info` 与每个视图都带 `interactive`，界面只在可用时显示输入框。`output` 读取**增量** delta（`readOutput()` 不会重复吐已读内容），返回 JSON 安全的视图：状态、退出码、信号、cwd、沙箱模式与累积输出。所有副作用都是 `ctx.effect`，其中包含卸载时杀掉活动进程。
 
 **Client 半边**（`lib/client.js`）做三件事：
 
@@ -241,7 +244,9 @@ document.head.appendChild(tag);
 - 输出是轮询而非推送；默认间隔下极快的命令可能只出现一两个 chunk。
 - 每个运行的卡片都落在同一个固定的右下角 dock 里；没有按代码框锚定，所以输出永远不会出现在会话区内部。
 - 运行输出在宿主机上保留 10 分钟，且能扛过页面刷新（run id 存在 `sessionStorage`），但超过 TTL 或 DSH 重启后宿主机就忘了。
-- `input`（stdin）在宿主端已实现，界面尚未暴露。
+- 交互式输入需要宿主的终端原语（macOS/Linux 上的 DSH 0.2）。旧宿主或 Windows 上用管道运行，不显示输入框。
+- PTY 只是纯文本视图而非终端模拟器：颜色与光标移动会被去掉，全屏程序（`vim`、`top`、`less`）无法使用；stdout 与 stderr 合并输出。
+- `sudo` / `ssh` 提示需要 `danger-full-access` 会话（见安全姿态）。
 
 ## 许可证
 
