@@ -1,257 +1,79 @@
 # dsh-run-button
 
-**给 DSH 回答里的每一个命令行代码框加一个「运行」按钮。** 点一下命令就在宿主机上执行，stdout/stderr 实时流进**右下角的浮动面板**（默认行为）。**不需要任何可选插件**：另有一个 `Panel` 模式可以把每个运行送进底部工作台标签页，而它才是唯一用到 [`dsh-better-sidebar`](https://github.com/omdsh-dev/DSH-better-sidebar) 的模式 —— 见[三种输出位置](#三种输出位置)。
-
-> 状态：`0.1.0` —— 可工作的插件包，纯手写（无打包器、无 TypeScript 构建）。
->
-> **已在真实 DSH 上验证**（`0.1.5-rc.2`）：运行按钮能在会话自己的工作目录里执行命令、实时输出、并停止正在运行的进程。两种输出形态都端到端跑过 —— `Dock` 模式在右下角堆叠卡片；装了 `dsh-better-sidebar` 时 `Panel` 模式每个运行一个底部工作台标签页。
-
 <p align="center">
-  <a href="README.md">English</a> · <b>中文</b>
+  <a href="README.md">English</a> · <a href="README.ja.md">日本語</a> · <b>中文</b>
 </p>
 
----
+**给 DSH 回答里的每个命令行代码块加一个 Run 按钮。** 点一下，命令就在你的机器上运行，位置是当前会话的工作区和沙箱。输出实时流进右下角的小浮窗；遇到 `yes/no` 确认或 `sudo` 密码，也能直接在 DSH 里回答。
 
-## 为什么做它
+<p align="center">
+  <img src="assets/interactive.png" alt="在 Run 浮窗里回答 sudo 密码提示" width="560">
+</p>
 
-DSH 把回答渲染成 Markdown，而代码框只提供一个操作：**复制**。每次回答里出现想试的命令（一段 `git`、一个 `pnpm` 脚本、一条诊断命令），你都得复制 → 切终端 → 粘贴 → 回车。
-
-这个插件补上缺的那个动词。语言是命令行的代码框会在「复制」旁边多一个 **▶ 运行**。点它之后：
-
-- 命令在**宿主机**上执行，用它所在会话自己的工作目录与沙箱；
-- 输出流进**右下角的浮动面板（dock）** —— 每个运行一张卡片，最新的在最上面，始终不覆盖对话区；
-- 按钮反映状态：`▶ 运行` → `■ 停止` → `✓ 运行`（退出码 0）/ `✕ 运行`（非 0 或被终止）；
-- 输入框上方的单行运行条显示所有进行中的运行和最近结束的一条；更早的运行收进 **+N** 菜单（含 **Clear finished**）。点 chip 重新展开该运行的卡片，点它的 `×` 丢弃该运行。没有运行中的命令时运行条变淡，悬停即恢复；
-- 长时间运行的命令可以从按钮、浮动卡片或底部标签页里停止。
-
-### 三种输出位置
-
-三种模式，可用运行条右侧的图标按钮切换（`Dock` / `Panel` / `Off`，悬停可看名称），选择会被记住：
-
-| 模式 | 输出去哪 | 需要额外装东西吗 |
-| --- | --- | --- |
-| **Dock**（默认） | 右下角固定堆叠，每个运行一张浮动卡片 | 不需要 |
-| **Panel** | 每个运行一个底部工作台标签页 —— 就是终端所在的那个面板 | [`dsh-better-sidebar`](https://github.com/omdsh-dev/DSH-better-sidebar) |
-| **Off** | 不渲染输出；按钮仍反映状态 | 不需要 |
-
-`Panel` 是通过 `dsh-better-sidebar` 公开的 `ctx.betterSidebar` 服务提供的（`registerTab` + `openTab({ target: 'bottom' })`），与它内置的终端 / git / 任务标签页用的是同一个扩展点。该插件是**可选**依赖：没装时 `Panel` 会被置灰，`Dock` 仍是默认，所以这个插件不依赖任何额外东西就能完整使用。
-
-卡片**刻意不锚定**在发起它的代码框上。锚定看起来更整齐，直到该代码框滚出虚拟化列表、锚点查不到，同一个运行就会**同时出现在两处**。固定的右下角面板没有这种失效模式。
-
-## 识别哪些代码框
-
-当代码框的 info string 是命令行语言时才会出现按钮：
-
-| 语言标记 | 按钮文字 |
-| --- | --- |
-| `bash`、`sh`、`zsh`、`shell`、`shellscript` | `▶ Run` |
-| `console` | `▶ console` |
-| `powershell`、`pwsh`、`ps1` | `▶ PowerShell` |
-| `cmd`、`bat`、`batch`、`dos` | `▶ cmd` |
-
-其他代码框（`js`、`python`、`json` 等）保持原样：执行它们需要自行拼装解释器调用，那是另一个功能。
-
-## 安全姿态
-
-这是一个**由用户主动触发**的执行入口，并且刻意不比 Agent 本身更强：
-
-- 一次运行继承调用会话的**沙箱策略**（`ctx.sandboxPolicy.resolve`）与**工作目录**；点运行能到的范围不会超过该会话里 Agent 能到的范围。
-- 命令**按代码框里写的样子**执行，不做任何插值，也不从模型输出拼接 shell 字符串。
-- RPC 通道仅限本机回环，并且位于 Connection 自带的信任栅栏与浏览器鉴权之后；没有凭据的请求直接 `401`。
-- 执行是异步的，界面不会阻塞；插件停止或更新时会杀掉仍在运行的进程，重载后不留孤儿进程。
-- 每条流上限 256 KB；被沙箱拦截的命令会把执行器自己的拒绝信息显示在面板里。
-- 交互式运行会拿到真正的终端（PTY），但仍在**同一个沙箱**里（`ctx.sandbox.confine`，与 Agent 自己的终端相同）。在 `read-only` / `workspace-write` 下，macOS Seatbelt 会拒绝打开 `/dev/tty` 和启动 setuid 程序，所以 `sudo` 与 `ssh` 的主机指纹确认、密码提示只在 `danger-full-access` 会话里可用；从 stdin 读的提示（`read -p`、安装程序）在所有模式下都可用。
-- **输入的内容不会被记录或保存。** 不做本地回显，不写插件日志、sessionStorage，也不进 Run→AI 的 job；输出里唯一可能出现的是终端自己的回显，而密码提示会关掉回显。
+> 已在 DSH `0.2.1-rc.1`（macOS）上验证：运行与停止命令，回答 `read -p` / `sudo` / `ssh` 主机密钥确认，Dock 与 Panel 两种输出。
 
 ## 安装
 
-本插件已发布到 npm，也已收录进 DSH 社区插件目录，所以有四种安装途径。前两种是绝大多数人需要的。
+**插件市场：** 设置 → 插件市场 → 搜索 `dsh-run-button` → 安装。
 
-### 市场一键安装（最省事，不用终端）
-
-**设置 → 插件市场 → 搜 `dsh-run-button` → 安装。** 市场读的是插件目录，它会优先用 npm 包、否则用预构建 tarball——两种情况都是几秒装完，用户机器不需要任何本地工具链。
-
-### 从 npm 装，用 `dsh` 命令行
+**`dsh` 命令行：**
 
 ```bash
 dsh plugin --profile web add dsh-run-button
-```
-
-这条会从 npm registry 解析 `dsh-run-button`，写入 profile 的依赖与 `dsh.profile.bundles` 列表，建立链接并挂载。卸载：
-
-```bash
-dsh plugin --profile web remove dsh-run-button
-```
-
-如果只想钉版本、或从仓库离线安装，用下面任一条：
-
-```bash
-# 最新 Release 上的预构建 tarball
+# 或者从最新 release / 仓库源码安装
 dsh plugin --profile web add "https://github.com/lifwsp/dsh-run-button/releases/latest/download/dsh-run-button.tgz"
-
-# 直接从仓库源码装
 dsh plugin --profile web add github:lifwsp/dsh-run-button
 ```
 
-> **裸跑 `npm install dsh-run-button` 对 DSH 来说不算安装。** 它只是把包取到 `node_modules`，而 DSH 只加载出现在 profile `bundles` 列表里的插件（或自带 bundle patch 的包），所以什么都不会被挂载。要手动装就写进 profile：
-
-```json
-{
-  "dependencies": { "dsh-run-button": "^0.1.0" },
-  "dsh": { "profile": { "bundles": ["...", "dsh-run-button"] } }
-}
-```
-
-### 从源码安装（开发）
-
-```bash
-# 把包 junction 进 profile 的 node_modules 并挂载
-dsh dev inject <path-to>/dsh-run-button
-```
-
-然后重启 DSH（客户端半边只需刷新页面）。
+卸载：`dsh plugin --profile web remove dsh-run-button`。只执行 `npm install` 不会让 DSH 加载这个插件。
 
 ## 使用
 
-1. 让 Agent 给一条命令，或自己写一个 `bash`/`powershell` 代码框。
-2. 点代码框标题栏里的 **▶ 运行**。
-3. 输出出现在**右下角的浮动面板**里（默认 Dock 模式）。每个运行一张卡片：运行中可 **stop**、**collapse** 折叠输出、**close** 丢弃该条。
-   运行中的卡片在输出下方有一行**输入框**：输入后按 **Enter** 发送（附带换行）。当最后一行输出像密码提示（`Password:`、`密码：`、`passphrase` 等）时输入框会自动**掩码**，**mask** 可手动切换。**^C**（或在输入框里按 Ctrl-C）向前台程序发送 SIGINT，不会结束整个运行；**^D**（或在空输入框里按 Ctrl-D）发送 EOF。例：`read -p "name? " n; echo "hi $n"`。
-4. 想改输出位置就点运行条右侧的 **Dock / Panel / Off** 图标；切到 `Panel` 时改为每个运行一个底部工作台标签页（那个标签页有 **Stop**、**Copy**、**Close** 和一个 **Clear finished** 式的列表）。
-5. 点 **cwd 小标签**（运行按钮旁）可为该代码框指定工作目录；选择会在本会话内记住。
+1. 让 Agent 给出命令，或者自己写一个 `bash` / `powershell` 代码块。
+2. 点代码块标题栏里的 **▶ Run**。改点 **▶ Run→AI** 的话，命令结束后 Agent 会读取结果并回复。
+3. 输出出现在右下角的**浮窗**里。运行中可以停止，也可以折叠输出或关闭卡片。
+4. 命令等待输入时，在输出下方的输入框里输入，按 **Enter** 发送。
+   - 提示像是在要密码时（`Password:`、`パスワード:`、`passphrase` 等），输入框会自动隐藏输入内容；**mask** 可以手动切换。
+   - **^C** 向程序发送 Ctrl-C，但不结束这次运行；**^D** 发送输入结束（EOF）。
+5. 点 Run 旁边的 **cwd**，可以为这个代码块换一个工作目录。
 
-## 实现
+消息框上方的运行条显示正在运行的命令和最近结束的一条；更早的运行收在 **+N** 里（含 **Clear finished**）。没有命令在运行时，运行条会变淡。右侧的图标用来选择输出位置，鼠标悬停可以看到名称。
 
-一个 Cordis 插件包，两个半边：
-
-```
-dsh-run-button/
-├── package.json          dsh.bundle.patch + dsh.client {platform:"web"}
-├── cordis.patch.yml      profile 行：- insert: [{id: run-button, name: dsh-run-button}]
-├── lib/index.js          HOST  — ESM Cordis 插件
-├── lib/client.js         CLIENT — 经典脚本 bundle（window.__ModuleLoader__）
-├── scripts/check-client.mjs      浏览器 bundle 的解析闸门 + 未声明全局审计
-└── scripts/simulate-client.mjs   在真实 DOM 上挂载并走完整链路
-```
-
-**Host 半边**（`lib/index.js`）挂一条专用回环 RPC 通道 `/dsh-run-button`，端点 `info`、`start`、`output`、`input`、`kill`。`start` 解析会话的 cwd 与沙箱策略，然后启动命令。宿主提供终端原语（`ctx.subprocess.spawnTerminal`，DSH 0.2）时，用 **PTY** 运行 `bash -c <命令>`；除 `danger-full-access` 外先经 `ctx.sandbox.confine` 包裹，并把终端包装成与 shell seam 返回值同形的句柄（去掉 ANSI 序列、CRLF 折叠为 LF、保留 1 MB、上限 30 分钟）。否则——或 confine / 启动失败、或请求带 `interactive: false`——回退到普通 `shell` 服务（`ctx.shell.resolve` → `ctx.shell.execute`，旧宿主为 `ctx.shell.start`），此时 stdin 是关闭的。`input` 向 PTY 写入（`{ runId, data }`）或中断前台作业（`{ runId, signal: "SIGINT" }`）；`info` 与每个视图都带 `interactive`，界面只在可用时显示输入框。`output` 读取**增量** delta（`readOutput()` 不会重复吐已读内容），返回 JSON 安全的视图：状态、退出码、信号、cwd、沙箱模式与累积输出。所有副作用都是 `ctx.effect`，其中包含卸载时杀掉活动进程。
-
-**Client 半边**（`lib/client.js`）做三件事：
-
-1. `MutationObserver` 扫描会话区里的 `[data-code-block-banner]`，读出语言与 `<pre>` 文本，把运行按钮与 cwd 小标签**追加为 banner 动作行的尾部子节点** —— React 的 reconciler 从不枚举 DOM 子节点，因此尾部额外节点能在重渲染中存活。由于记录超过 100 条时列表会虚拟化，扫描在 mutation 与滚动时各跑一次。
-2. 运行存储通过 `connection.rpc.call` 每 180 ms 轮询 `output` 并通知订阅者；React 视图都从这一份存储渲染，所以按钮、运行条与输出面板三者始终一致。
-3. 右下角 dock 是一个固定容器，每个运行一张卡片；`Panel` 模式下改为通过 `ctx.betterSidebar.registerTab(...)` 注册 per-run 标签页，并用 `openTab({ target: 'bottom' })` 打开。标签页本体就是一个普通 React 组件，接收标准的 `TabComponentProps`。
-
-运行条注册在会话 Slot `conversation.input.dock`。
-
-### 没有构建步骤
-
-两个半边都是手写纯 JavaScript：
-
-- `lib/index.js` 就是普通 ESM —— Cordis loader 直接 import（不需要 `tsconfig`/`tsdown`）。
-- `lib/client.js` 是**经典脚本**（不是 ES module），采用浏览器内核唯一接受的注册格式：
-
-```js
-window.__ModuleLoader__.load({
-  id: "dsh-run-button",           // 必须等于 package.json 的 name
-  factory: (require) => { var module = {exports:{}}; var exports = module.exports; /* … */ return module.exports }
-})
-```
-
-`require` 只能命中 shell 冻结的基线表（`react`、`react/jsx-runtime`、`react-dom`、`@deepseek-ai/cordis` 等），所以这个插件除 `react` 外不依赖任何东西。
-
-发布前跑这两条闸门：
-
-```bash
-node scripts/check-client.mjs      # 解析 + 物化 factory；并审计未声明的环境全局
-node scripts/simulate-client.mjs   # 在真实 DOM 上挂载，走完整链路
-```
-
-`simulate-client.mjs` 是关键那条。它像 shell 一样求值 bundle（`window.__ModuleLoader__`，再给一个类 Cordis 的 `ctx`），在 [happy-dom](https://github.com/capricorn86/happy-dom) 文档上挂载，渲染真实的代码框标记，然后断言：
-
-- 运行按钮确实被注入进 banner，并被点击；
-- `run/start` 与 `output` 确实在 RPC 通道上被调用；
-- 切换输出模式后 dock 卡片出现又消失，且**只有一个 dock 容器、每个运行恰好一张卡**；
-- 标签类型已注册、**不去重**，两次运行产生**两个不同标签 id 且各自携带自己的 `runId`** —— per-run 配对是最容易悄悄退化的地方；
-- 卸载后没有留下任何残留。
-
-它之所以存在：早先的 `check-client.mjs` 只证明 bundle **能解析**，不跑 `apply()`，于是未声明的全局变量（`styles`）顺利通过，把整页变成 "Failed to load plugins"。那两个上线的 bug **都是这个 harness 在编写过程中自己抓出来的** —— 这就是保留它的理由。
-
-## 宿主契约（写 client 半边前必读）
-
-`lib/client.js` 是手写纯 JS，没有类型检查兜底：臆造 API、漏填必填字段都不会在构建期报错，只会变成整页白屏或崩掉的侧栏标签页。以下契约摘自宿主的实际定义。
-
-### 没有环境全局
-
-**动态** Cordis 插件沙箱会给出 `styles` 与 `harness` 这两个 builtin。而一个真正发布的包 bundle **两个都没有** —— 引用其中一个就会在 `apply()` 里抛错，而抛错的 `apply()` 会把整个 composition 拖垮（"Failed to load plugins"），不只是这个插件。因此每个浏览器全局都通过 `window.<name>` 访问，并且 `check-client.mjs` 会在裸引用再次出现时让构建失败。
-
-`apply()` 同时包在 `try/catch` 里：失败时会报告、回滚已挂载部分并返回，所以这个插件永远不可能是页面停止渲染的原因。
-
-### 注入 CSS：内核没有 `styles` 服务
-
-客户端内核**不提供** `styles` 服务，`ctx.get("styles")` 也拿不到东西。全局样式自己插 `<style>`，并在 teardown 里对称移除（`apply()` 可能被反复调用）：
-
-```js
-var tag = document.createElement("style");
-tag.id = PREFIX + "-styles";
-tag.textContent = CSS;          // 本项目的 CSS 是字符串（数组 .join("") 得到），不是数组
-document.head.appendChild(tag);
-```
-
-### `ctx.betterSidebar.registerTab()`：`component` 是必填
-
-`TabDescriptor`（定义见 `dsh-better-sidebar/src/client/service.ts`）：
-
-| 字段 | 必填 | 说明 |
+| 模式 | 输出位置 | 依赖 |
 | --- | --- | --- |
-| `id` | ✅ | 唯一 id，同时是 `SidebarTab.type` |
-| `title` | ✅ | `string \| (() => string)` |
-| `component` | ✅ | `(props: TabComponentProps) => ReactNode`。**漏传即 `createElement(undefined)` → React #130** |
-| `description` | | 新标签页列表里的一行说明 |
-| `icon` | | `ReactNode \| ((size: number) => ReactNode)` |
-| `order` | | 菜单排序，默认 100 |
-| `hidden` | | 不在 `+` 菜单里出现 |
-| `available` | | `(ctx, scope, state) => boolean` |
-| `single` / `dedupeKey` | | 单实例 / 自定义去重 |
-| `createTab` | | 自定义开页（铸 id + 状态补丁） |
-| `urlTarget` | | 接管外部链接点击 |
-| `settings` / `badge` | | 设置页开关 / 标签页角标 |
-| `onOpen` / `onActivate` / `onClose` | | 生命周期回调 |
+| **Dock**（默认） | 右下角的浮动卡片，每次运行一张 | 无 |
+| **Panel** | 右侧边栏或底部工作台的标签页，每次运行一个 | [`dsh-better-sidebar`](https://github.com/omdsh-dev/DSH-better-sidebar) |
+| **Off** | 不显示输出；Run 按钮仍会显示状态 | 无 |
 
-`component` 收到的 `TabComponentProps`：`ctx`、`store`、`scope`、`tab`、`visible`（是否活动**且**面板展开 —— 不 live 时应暂停轮询）。
+## 支持的代码块
 
-函数声明会提升，所以 `component: RunTab` 可以写在 `function RunTab()` 之前。
+| 语言标记 | 按钮 |
+| --- | --- |
+| `bash`, `sh`, `zsh`, `shell`, `shellscript` | `▶ Run` |
+| `console` | `▶ console` |
+| `powershell`, `pwsh`, `ps1` | `▶ PowerShell` |
+| `cmd`, `bat`, `batch`, `dos` | `▶ cmd` |
 
-### 渲染错误的可见形态
+其他语言（`js`、`python` 等）不加按钮。
 
-`dsh-better-sidebar` 的 `RenderBoundary` 有两个作用域：ROOT（整个侧栏外壳，`index.tsx`）与 PER-TAB（单个标签页，`Sidebar.tsx` 的 `TabContent`）。报错前缀统一是 `dsh-better-sidebar: <message>`。**看到这个前缀先怀疑 run-button 注册的标签页，而不是侧栏本身** —— 外壳和其他标签页通常是好的。
+## 安全
 
-## 配置
+- 一次运行能做的事，不会超过同一会话里的 Agent：它使用会话的**沙箱策略**和**工作区**。
+- 命令严格按代码块里写的内容执行，不会拼接模型输出。
+- 你输入的内容**不会被记录或保存**：不进插件日志、浏览器存储，也不进 Run→AI 的结果。密码提示会关闭终端回显，所以密码不会出现在输出里。
+- 插件停止或更新时会结束正在运行的命令，刷新页面后不会留下孤儿进程。
 
-无需配置。可调项：
+## 限制
 
-| 旋钮 | 位置 | 默认 |
-| --- | --- | --- |
-| 轮询间隔 | `lib/client.js` 的 `POLL_MS` | 180 ms |
-| 并发运行上限 | `lib/index.js` 的 `MAX_LIVE_RUNS` | 16 |
-| 单条流上限 | `lib/index.js` 的 `MAX_STREAM_BYTES` | 256 KB |
-| 完成后保留时长 | `lib/index.js` 的 `RUN_TTL_MS` | 10 分钟 |
-| 识别语言 | `lib/client.js` 的 `SHELL_LANGUAGES` | 见上表 |
+- **只有 `danger-full-access` 会话才能回答 `sudo` 和 `ssh` 的提示。** 在 `read-only` 和 `workspace-write` 下，macOS 沙箱不允许它们读取终端，输入框会给出说明。读取普通输入的提示（`read -p`、安装程序）在所有模式下都能回答。
+- 回答提示需要 macOS 或 Linux 上的 DSH 0.2。其他环境下命令照常运行，但没有输入框。
+- 输出是纯文本：颜色会被去掉，`vim`、`less`、`top` 这类全屏程序无法使用。
+- 运行结束后输出保留 10 分钟，刷新页面后仍可查看，但 DSH 重启后会丢失。每条输出流上限 256 KB（可输入的运行为 1 MB）。可输入的运行 30 分钟后会自动停止。
 
-## 已知限制
+## 开发
 
-- 只有命令行代码框可运行（`js`、`python` 等按设计不在范围内）。
-- 输出是轮询而非推送；默认间隔下极快的命令可能只出现一两个 chunk。
-- 每个运行的卡片都落在同一个固定的右下角 dock 里；没有按代码框锚定，所以输出永远不会出现在会话区内部。
-- 运行输出在宿主机上保留 10 分钟，且能扛过页面刷新（run id 存在 `sessionStorage`），但超过 TTL 或 DSH 重启后宿主机就忘了。
-- 交互式输入需要宿主的终端原语（macOS/Linux 上的 DSH 0.2）。旧宿主或 Windows 上用管道运行，不显示输入框。
-- PTY 只是纯文本视图而非终端模拟器：颜色与光标移动会被去掉，全屏程序（`vim`、`top`、`less`）无法使用；stdout 与 stderr 合并输出。
-- `sudo` / `ssh` 提示需要 `danger-full-access` 会话（见安全姿态）。
+工作原理、测试和宿主 API 注意事项见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)（英文）。
 
 ## 许可证
 
-MIT —— 见 [LICENSE](LICENSE)。
-
-## 相关项目
-
-[dsh-smooth-stream](https://github.com/Laplace-bit/dsh-smooth-stream) 同样会接入代码块 banner —— 但它是为了流式动画与滚动控制，不是为了执行代码。两者不重叠：Smooth Stream 改变输出**如何呈现**，Run Button 增加的是会话区本来没有的操作入口。两者可以共存（已在同一个 profile 里一起验证过）。
+MIT，见 [LICENSE](LICENSE)。原插件由 [EdwardXiao-bit](https://github.com/EdwardXiao-bit/dsh-run-button) 创建；这个 fork 增加了 DSH 0.2 支持、Run→AI、Panel 打开位置选择和交互式输入。
